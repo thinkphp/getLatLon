@@ -1,0 +1,438 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+   <meta http-equiv="Content-Type" content="text/html;charset=UTF-8" />
+   <title>Get latitude and longitude</title>
+   <link  href="http://fonts.googleapis.com/css?family=Crimson+Text:regular&subset=latin" rel="stylesheet" type="text/css" >
+   <style type="text/css">
+html {height: 100%;padding: 0;margin: 0;}
+body {height: 100%;padding: 0;margin: 0;font-size: 13pt;font-family: 'Crimson Text', serif;}
+div#map {width: 100%;height:100%}
+div#crosshair {position: absolute;left: 50%;width: 19px;height: 19px;margin-left: -8px;display: block;background: url(crosshair.gif);background-position: center center;background-repeat: no-repeat;top: 50%}
+#footer { bottom: 40px; text-align: center;}
+.box {position: absolute; width: 100%; background-image: url("back.png"); color: #fff;z-index: 1}
+.box-content {margin: 10px;}
+form {display: inline}
+form p {display: inline; margin-right: 20px}
+a{color: #fff}
+.js{position: absolute; left: 100px;top:0;width: 470px;color: #fff;z-index: 1;background-image: url("back.png");padding: 10px}
+#findme,#findmeIE,#findmeChrome,#findmeOPERA {position: absolute; left: 4px;-moz-border-radius:5px 5px 5px 5px;-moz-box-shadow:-1px 1px 5px rgba(33, 33, 33, 0.6);background:none repeat scroll 0 0 #FFCC66;border:medium none;color:#000000;font-weight:bold;padding:0.2em 1em;text-decoration:none;z-index: 100;}
+#findme{top:504px;}
+#findmeIE{top:496px;}
+#findmeChrome{top:577px;}
+#findmeOPERA{top:525px;}
+button:hover{cursor: pointer}
+#yourlocation div{text-align: center;background: #393;color: #fff;padding: 3px}
+input[type=submit]{-moz-border-radius:5px 5px 5px 5px;-moz-box-shadow:-1px 1px 5px rgba(33, 33, 33, 0.6);background:none repeat scroll 0 0 #393;border:medium none;color:#fff;font-weight:bold;padding:0.2em 1em;text-decoration:none;cursor: pointer}
+   </style>
+   <script src="http://maps.google.com/maps?file=api&amp;v=2&amp;sensor=false&amp;key=ABQIAAAAHFKkG2s1GKwMWvhsxH6UGhSwO4A2dv-8-RWt_LAnNInm0gzqphQauP8NKYx-VSjfC5uY-gZD1zUq6w" type="text/javascript"></script>
+   <script src="ajax.js" type="text/javascript"></script>  
+   <script src="yqlgeo.js" type="text/javascript"></script>  
+</head>
+<body id="bd">
+<div id="hd">
+ <div id="latlng"></div>
+ <div id="zoom"></div>
+ <div id="timezone"></div>
+ <div id="localtime"></div>
+</div>
+<div id="map"></div>
+<div id="crosshair"></div>
+<div id="yourlocation"></div>
+<div class="box" id="footer">
+   <div class="box-content">
+        <form action="#" id="f">
+              <p><label for="location">Enter location: </label><input type="text" id="location" name="location" /></p>
+              <p class="submit"><input type="submit" name="" value="Search" /></p>
+              <p>@<a href="http://twitter.com/thinkphp">thinkphp</a> &copy; 2010 | fork me on <a href="http://github.com/thinkphp/getlatlon/">github</a></p>
+        </form>
+   </div>
+</div>
+<script type="text/javascript">
+
+var getlatlon = (function(){
+
+    /* private members */
+
+    //this variable hold the end-user's ip
+    var theIP;
+
+    var accuracyToZoomLevel = [
+      1,  //0 - unknown location
+      5,  //1 - country
+      6,  //2 - region (state, province, prefecture, etc.)
+      8,  //3 - sub-region (county, muncipality, etc)
+      11, //4 - Town (city, village)
+      13, //5 - Post code ()
+      15, //6 - street
+      16, //7 - intersection
+      17, //8 - address   
+      17  //9 - premise
+    ];   
+    /*
+     * Usage: gmap.addMapType(getOSMapType());
+     * @private 
+     */
+     function getOSMapType() {
+       var copyright = new GCopyrightCollection('<a href="http://www.openstreetmap.org/" class="copyright">OpenStreetMap</a>');
+           copyright.addCopyright(new GCopyright(1, 
+                                                 new GLatLngBounds(new GLatLng(-90, -180),new GLatLng(90, 180)),
+                                                 0, ' '));
+       var tileLayer = new GTileLayer(copyright, 7, 18, {tileUrlTemplate: 'http://b.tile.cloudmade.com/BC9A493B41014CAABB98F0471D759707/998/256/{Z}/{X}/{Y}.png', isPng: true, opacity: 1.0});
+       var mapType = new GMapType([tileLayer], G_NORMAL_MAP.getProjection(), 'OSM');
+
+      return mapType;
+    }
+
+    //return element through ID
+    function $(id) {return document.getElementById(id);}
+
+    //function init load map and stuff
+    function init() {
+              
+              //create an object of GMap2
+              window.gmap = new GMap2(document.getElementById('map'));
+
+              //add the large control to the map
+              gmap.addControl(new GLargeMapControl());
+ 
+              //add the type control the the map
+              gmap.addControl(new GMapTypeControl());
+
+              //add open street map type
+              gmap.addMapType(getOSMapType());
+
+              //enable continuous zoom
+              gmap.enableContinuousZoom();
+
+              //enable scroll wheel zoom
+              gmap.enableScrollWheelZoom();
+
+             // default view of the world
+             gmap.setCenter(new google.maps.LatLng(43.834526782236814, -37.265625), 3);
+
+             //get element form by ID 'f'
+             var form = document.getElementById('f');
+                 window.geocoder = new google.maps.ClientGeocoder();
+
+                 //add handler for 'submit' event form
+                 form.onsubmit = function(){
+                   //get first div from element with ID 'yourlocation';
+                   var yourloc = $('yourlocation').getElementsByTagName('div')[0];
+
+                   //if yourloc element exists then remove him
+                   if(yourloc) {
+                       yourloc.parentNode.removeChild(yourloc);
+                   } 
+                   geocode(document.getElementById('location').value);
+                   return false;
+                 } 
+
+             var timer = null;
+
+             //add handler for 'move' event map
+             google.maps.Event.addListener(gmap,'move',function(){
+                  
+                 if(!hasClass($('hd'),'js')) {
+                     $('hd').className = 'js';
+                 }
+
+                 var center = gmap.getCenter();
+
+                 updateLatLngFields(center.lat(),center.lng());
+
+                 if(timer) {
+                    clearTimeout(timer);
+                    timer = null;
+                 }  
+
+                 timer = setTimeout(function(){
+                       var url = "http://ws.geonames.org/timezoneJSON?lat=" + 
+                                  center.lat() + "&lng=" + center.lng() + 
+                                 "&callback=getlatlon.timezoneLoaded";
+                       loadScript(url,function(){});
+                 },1500);
+             }); 
+
+             //add handler for 'zoomed' event map
+             google.maps.Event.addListener(gmap,'zoomend',function(oldZoom, newZoom){
+                 $('zoom').innerHTML = '<strong>Zoom:</strong> ' + newZoom;
+             }); 
+
+
+            //if query string was provided then geocoded it
+            var qs = window.location.href.split('?');
+                if(qs[1]) { 
+                   var location = encodeURIComponent(qs[1]);
+                   document.getElementById('location').value = location;
+                   geocode(location);
+                }
+
+            //add handler to the 'dblclick' event crosshair
+            google.maps.Event.addDomListener($('crosshair'),'dblclick',function(){
+                   gmap.zoomIn();
+            });
+
+            //get User Agent
+            var nua = navigator.userAgent;
+       
+            //if we have Firefox browser then 
+            //we can use the navigator.geolocation 
+            //with the method getCurrentPosition
+            if((/Gecko\/(\S*)/).test(nua)) {
+                    //create a button for geolocation
+                    var butt = document.createElement('button');
+
+                        //set attribute to the button 'findme'
+                        butt.setAttribute('id','findme');
+
+                        //added text to the button
+                        butt.appendChild(document.createTextNode('find my location'));
+
+                        //add button to the 'bd' element
+                        $('bd').appendChild(butt);
+
+                        //add a handler for click event button your location;
+                        butt.onclick = function(){
+
+                             if(navigator.geolocation) {
+
+                                this.innerHTML = 'Determining your location...';
+
+                                var but = this;
+
+                                navigator.geolocation.getCurrentPosition(function(position){
+
+                                   var outputString = 'I can guess that your latitude: ' + position.coords.latitude + ', Longitude: '+ position.coords.longitude+ ' Accuracy: '+ position.coords.accuracy + ' meters ';
+
+                                   var jsCenter = new GLatLng(position.coords.latitude, position.coords.longitude);
+
+                                   geocoder.getLocations(jsCenter, function(response){
+                                           if(response.Status.code == 200) {
+                                                   var place = response.Placemark[0].address;
+                                                   outputString += place;
+                                                   $('yourlocation').innerHTML = '<div>'+outputString+'</div>';
+                                           } else {
+                                             $('yourlocation').innerHTML = '<div>'+outputString+'</div>';
+                                           }
+                                   });
+                                   but.innerHTML = 'Find my location';
+                                   //show a zoom for 'my location'
+                                   gmap.setCenter(new google.maps.LatLng(position.coords.latitude,position.coords.longitude), 15);
+                                },function(error){ 
+                                   if(window.console){console.log('I couldn\'t guess your location!');} 
+                                },
+                                {enableHighAccuracy: true, maximumAge: 120000});
+                             }//end getCurrentPostion
+                         return false;
+                        }//end handler for click
+            }//end if test Gecko
+
+            //if useragent is IE or CHROME then execute some code
+            if(/MSIE\s([^;]*)/.test(nua)) {
+
+                    //create a button for geolocation
+                    var butt = document.createElement('button');
+
+                        //set attribute to the button 'findmeIE'
+                        butt.setAttribute('id','findmeIE');
+
+                        //added text to the button
+                        butt.appendChild(document.createTextNode('find my location'));
+
+                        //add button to the 'bd' element
+                        $('bd').appendChild(butt);
+
+                        //add a handler for click event button in your location;
+                        butt.onclick = function(){
+
+                             //get IP end-user and some data such as - address, latitude and longitude
+                             // I could use directly to make a request to 'http://ipinfodb.com/ip_query.php'
+                             //but not works in Google Chrome the ajax...
+                             //so...I use this method to retrive the data as XML
+
+                             //file php by which retrieve data from service
+                             var url = 'controller.php?ip='+theIP;
+
+                             //make a request AJAX
+                             /* @param url (String) url to load data 
+                                @param function (Function) callback function to receive data from server (controller.php)
+                                @return none.  
+                              */
+                             AJAX.doXHR(url,function(r){
+                                     if(typeof r != 'string') {
+                                       var ip = r.documentElement.getElementsByTagName('Ip')[0].firstChild.nodeValue,
+                                           lat = r.documentElement.getElementsByTagName('Latitude')[0].firstChild.nodeValue,
+                                           lng = r.documentElement.getElementsByTagName('Longitude')[0].firstChild.nodeValue,
+                                           country = r.documentElement.getElementsByTagName('CountryName')[0].firstChild.nodeValue,
+                                           reg = r.documentElement.getElementsByTagName('RegionName')[0].firstChild.nodeValue,
+                                           city = r.documentElement.getElementsByTagName('City')[0].firstChild.nodeValue;
+                                           if(lat && lng) {
+                                              var center = new GLatLng(lat, lng);
+                                              gmap.setCenter(center, 15);
+                                              //update status with your location
+                                              $('yourlocation').innerHTML = '<div> IP:' + ip + ', Latitude: ' + 
+                                                 lat + ', Longitude: '+ lng +
+                                                 ', Country: '+ country + ', Region:'+ reg + ', City: '+ city +'</div>'; 
+                                           }
+                                     }
+                              });
+                          //return false
+                          return false;
+                        }
+            }//endif              
+
+            if(/AppleWebKit\/(\S*)/.test(nua) || /Opera/.test(nua) ) {
+
+                    //create a button for geolocation
+                    var butt = document.createElement('button');
+
+                        if(/Opera/.test(nua)) {
+
+                          //set attribute to the button 'findme'
+                          butt.setAttribute('id','findmeOPERA');
+
+                        } else {
+
+                          //set attribute to the button 'findme'
+                          butt.setAttribute('id','findmeChrome');
+                        }
+
+                        //added text to the button
+                        butt.appendChild(document.createTextNode('Find My Location'));
+
+                        //add button to the 'bd' element
+                        $('bd').appendChild(butt);
+
+                        //add a handler for event click button.
+                        //when you click the button the handler is triggered.
+                        butt.onclick = function() {
+
+                             //call yqlgeo for retrieve the data from visitor
+                             yqlgeo.get('visitor',function(ob){
+
+                                 var ob = ob.place; 
+                                 //get latitude, longitude, country code , 
+                                 //postal code, country name and woeid;
+                                 var lat = ob.centroid.latitude,
+                                     lng = ob.centroid.longitude,
+                                     country_code = ob.country.code,
+                                     postal_code = ob.postal.content,
+                                     country_name = ob.country.content,
+                                     woeid = ob.woeid;
+
+                                           //if we have latitude and longitude 
+                                           //then we can set center of map;
+                                           if(lat && lng) {
+
+                                              var center = new google.maps.LatLng(lat, lng);
+                                              gmap.setCenter(center);
+                                              gmap.setZoom(9);
+                                              $('yourlocation').innerHTML = '<div> Latitude: ' + 
+                                                 lat + ', Longitude: '+ lng +
+                                                 ', Country: '+ country_name + ', WOEID: '+ woeid + ', Postal Code: '+ postal_code +'</div>'; 
+                                           }
+                             });
+
+                        }//end handle for click
+
+            }//endif
+
+    }//end init
+
+    //update field latitude and longitude
+    function updateLatLngFields(lat,lng) {
+
+            $('latlng').innerHTML = '<strong>Latitude:</strong> ' + lat + ', <strong>Longitude: </strong>' + lng; 
+    }  
+
+    //function to search location with geocoder object
+    function geocode(location) {
+           geocoder.getLocations(location, getlatlon.geocodeComplete);
+    }
+
+    //callback function by which received the data from API Google
+    function geocodeComplete(result) {
+
+           if(window.console) {console.log(result);}
+
+           if(result.Status.code != 200) {
+              alert('Could not geocode "' + result.name +'"'); 
+              return; 
+           }  
+           //only use first result
+           var placemark = result.Placemark[0];
+           var accuracy = placemark.AddressDetails.Accuracy;
+           var zoomLevel = accuracyToZoomLevel[accuracy] || 1;
+           var lat = placemark.Point.coordinates[1],  
+               lng = placemark.Point.coordinates[0];
+               gmap.setCenter(new google.maps.LatLng(lat,lng),zoomLevel);  
+    }
+
+    //function to load external javascript by passing in url
+    function loadScript(url,callback) {
+
+             var s = document.createElement('script');
+                 s.type = 'text/javascript';
+    
+             //if ie
+             if(s.readyState) {
+
+                  s.onreadystatechange = function() {
+                        if(s.readyState == 'loaded' || s.readyState == 'complete') {
+                              s.onreadystatechange = null;
+                              if(callback){callback();}
+                        } 
+                  };
+             } else {
+                  s.onload = function(){
+                    if(callback) {callback();}
+                  }
+             }  
+             s.src = url;
+             document.getElementsByTagName('head')[0].appendChild(s);
+    };
+
+    //callback function passed the data result for timezone
+    function timezoneLoaded(result) {
+            var timezone = result.timezoneId;
+            if(!timezone) {
+                return;
+            } 
+            $('timezone').innerHTML = '<strong>Timezone: </strong>' + timezone;
+            var url = "http://json-time.appspot.com/time.json?callback=getlatlon.localtimeLoaded&tz=" + timezone; 
+            loadScript(url,function(){if(window.console){console.log('local time loaded!');}}) 
+    }
+
+    //callback function for data localtime 
+    function localtimeLoaded(result) {
+            $('localtime').innerHTML = '<strong>Local Time: </strong>' + result.datetime;
+    }
+
+    //function to determine if an element has a class or not.
+    function hasClass(elem,c) {
+            var pattern = new RegExp('(\\s|^)'+c+'(\\s|$)');
+            return (elem.className.match(pattern)); 
+    } 
+
+
+    //callback to receive data from jsonip.appspot
+    //@param (Object) data - the data from service API
+    function retrieveIp(data) {
+
+             //theIP var hold your IP
+             theIP = data.ip;
+    }
+
+  //some functions as public
+  return{init: init, geocodeComplete: geocodeComplete, timezoneLoaded: timezoneLoaded,localtimeLoaded: localtimeLoaded,retrieveIp: retrieveIp};
+})();
+</script>
+<script type="text/javascript" src="http://jsonip.appspot.com?callback=getlatlon.retrieveIp"></script>
+<script type="text/javascript">
+//initialize method init.
+getlatlon.init();
+</script>
+</body>
+</html>
+
